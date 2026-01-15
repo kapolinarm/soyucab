@@ -1,160 +1,125 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { JWT_SECRET } = require("../config/env");
-const { queryOne, exec, tx } = require("../db/query");
+const env = require("../config/env");
+const { withClient } = require("../db/query");
 
-async function resolveRole(correo) {
-  const isAdmin = await queryOne("SELECT 1 AS ok FROM personal_administrativo WHERE correo_electronico=$1", [correo]);
-  if (isAdmin) return "ADMIN";
+let PASSWORD_COL = null;
 
-  const isProf = await queryOne("SELECT 1 AS ok FROM profesor WHERE correo_electronico=$1", [correo]);
-  if (isProf) return "PROFESOR";
+async function detectPasswordColumn(client) {
+  if (PASSWORD_COL) return PASSWORD_COL;
 
-  const isEgr = await queryOne("SELECT 1 AS ok FROM egresado WHERE correo_electronico=$1", [correo]);
-  if (isEgr) return "EGRESADO";
-
-  const isEst = await queryOne("SELECT 1 AS ok FROM estudiante WHERE correo_electronico=$1", [correo]);
-  if (isEst) return "ESTUDIANTE";
-
-  return "PERSONA";
+  const candidates = ["password", "contrasena", "password_hash", "contrasena_hash"];
+  const r = await client.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema='public' AND table_name='persona'
+       AND column_name = ANY($1::text[])`,
+    [candidates]
+  );
+  if (!r.rows.length) {
+    throw new Error("La tabla persona no tiene columna de password (password/contrasena/...).");
+  }
+  PASSWORD_COL = r.rows[0].column_name;
+  return PASSWORD_COL;
 }
 
-function signToken(correo, role) {
-  return jwt.sign({ sub: correo, role }, JWT_SECRET, { expiresIn: "8h" });
+function signToken({ correo, role }) {
+  return jwt.sign({ sub: correo, role: role || "USER" }, env.JWT_SECRET, { expiresIn: "12h" });
 }
 
-async function register(body) {
+async function register(payload) {
   const {
     correo_electronico,
     nombres,
     apellidos,
     password,
+    tipo_usuario,
     fecha_nacimiento,
     url_foto,
-    biografia,
-    tipo,
-    carrera, semestre, fecha_ingreso,
-    departamento, tipo_contrato, es_activo,
-    fecha_grado, titulo, promocion,
-    cargo, unidad
-  } = body || {};
+    biografia
+  } = payload || {};
 
   if (!correo_electronico || !nombres || !apellidos || !password) {
-    const err = new Error("Faltan campos obligatorios (correo, nombres, apellidos, password)");
-    err.status = 400;
-    throw err;
+    throw new Error("correo_electronico, nombres, apellidos y password son obligatorios");
   }
 
-  const exists = await queryOne("SELECT 1 AS ok FROM persona WHERE correo_electronico=$1", [correo_electronico]);
-  if (exists) {
-    const err = new Error("Ya existe una persona con ese correo");
-    err.status = 409;
-    throw err;
-  }
+  return withClient(async (client) => {
+    const passCol = await detectPasswordColumn(client);
+    const hashed = await bcrypt.hash(password, 10);
 
-  const hash = await bcrypt.hash(String(password), 10);
-
-  await tx(async (client) => {
-    await client.query(
-      `INSERT INTO persona(correo_electronico, nombres, apellidos, password, fecha_nacimiento, url_foto, biografia)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [correo_electronico, nombres, apellidos, hash, fecha_nacimiento || null, url_foto || null, biografia || null]
-    );
-
-    const t = String(tipo || "PERSONA").toUpperCase();
-
-    if (t === "ESTUDIANTE") {
-      if (!carrera || !semestre || !fecha_ingreso) {
-        const err = new Error("Para ESTUDIANTE: carrera, semestre, fecha_ingreso son obligatorios");
-        err.status = 400;
-        throw err;
-      }
+    await client.query("BEGIN");
+    try {
       await client.query(
-        `INSERT INTO estudiante(correo_electronico, carrera, semestre, fecha_ingreso)
-         VALUES ($1,$2,$3,$4)`,
-        [correo_electronico, carrera, Number(semestre), fecha_ingreso]
+        `INSERT INTO persona (correo_electronico, nombres, apellidos, ${passCol}, fecha_nacimiento, url_foto, biografia)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [correo_electronico, nombres, apellidos, hashed, fecha_nacimiento || null, url_foto || null, biografia || null]
       );
-    }
 
-    if (t === "PROFESOR") {
-      if (!departamento || !tipo_contrato || typeof es_activo !== "boolean") {
-        const err = new Error("Para PROFESOR: departamento, tipo_contrato, es_activo son obligatorios");
-        err.status = 400;
-        throw err;
-      }
       await client.query(
-        `INSERT INTO profesor(correo_electronico, departamento, tipo_contrato, es_activo)
-         VALUES ($1,$2,$3,$4)`,
-        [correo_electronico, departamento, tipo_contrato, es_activo]
+        `INSERT INTO configuracion_de_privacidad(correo_electronico, visibilidad_perfil, mostrar_email, mostrar_telefono, mostrar_foto)
+         VALUES ($1,'PUBLICO', true, false, true)
+         ON CONFLICT (correo_electronico) DO NOTHING`,
+        [correo_electronico]
       );
-    }
 
-    if (t === "EGRESADO") {
-      if (!fecha_grado || !titulo || !promocion) {
-        const err = new Error("Para EGRESADO: fecha_grado, titulo, promocion son obligatorios");
-        err.status = 400;
-        throw err;
-      }
-      await client.query(
-        `INSERT INTO egresado(correo_electronico, fecha_grado, titulo, promocion)
-         VALUES ($1,$2,$3,$4)`,
-        [correo_electronico, fecha_grado, titulo, promocion]
-      );
-    }
+      if (tipo_usuario) {
+        const t = String(tipo_usuario).toUpperCase();
+        const today = new Date().toISOString().slice(0, 10);
 
-    if (t === "ADMIN") {
-      if (!cargo || !unidad) {
-        const err = new Error("Para ADMIN: cargo, unidad son obligatorios");
-        err.status = 400;
-        throw err;
+        if (t === "ESTUDIANTE") {
+          await client.query(
+            `INSERT INTO estudiante(correo_electronico, carrera, semestre, fecha_ingreso)
+             VALUES ($1,$2,$3,$4)`,
+            [correo_electronico, payload.carrera || "N/A", payload.semestre || 1, payload.fecha_ingreso || today]
+          );
+        } else if (t === "PROFESOR") {
+          await client.query(
+            `INSERT INTO profesor(correo_electronico, departamento, tipo_contrato, es_activo)
+             VALUES ($1,$2,$3,$4)`,
+            [correo_electronico, payload.departamento || "N/A", payload.tipo_contrato || "N/A", payload.es_activo ?? true]
+          );
+        } else if (t === "EGRESADO") {
+          await client.query(
+            `INSERT INTO egresado(correo_electronico, fecha_grado, titulo_obtenido, promocion)
+             VALUES ($1,$2,$3,$4)`,
+            [correo_electronico, payload.fecha_grado || today, payload.titulo_obtenido || "N/A", payload.promocion || "N/A"]
+          );
+        } else if (t === "ADMIN") {
+          await client.query(
+            `INSERT INTO personal_administrativo(correo_electronico, cargo, unidad)
+             VALUES ($1,$2,$3)`,
+            [correo_electronico, payload.cargo || "N/A", payload.unidad || "N/A"]
+          );
+        }
       }
-      await client.query(
-        `INSERT INTO personal_administrativo(correo_electronico, cargo, unidad)
-         VALUES ($1,$2,$3)`,
-        [correo_electronico, cargo, unidad]
-      );
+
+      await client.query("COMMIT");
+      return { token: signToken({ correo: correo_electronico, role: tipo_usuario || "USER" }) };
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
     }
   });
-
-  const role = await resolveRole(correo_electronico);
-  const token = signToken(correo_electronico, role);
-  return { ok: true, token, role };
 }
 
-async function login(body) {
-  const { correo_electronico, password } = body || {};
-  if (!correo_electronico || !password) {
-    const err = new Error("correo_electronico y password son obligatorios");
-    err.status = 400;
-    throw err;
-  }
+async function login({ correo_electronico, password }) {
+  if (!correo_electronico || !password) throw new Error("correo_electronico y password son obligatorios");
 
-  const u = await queryOne("SELECT correo_electronico, password FROM persona WHERE correo_electronico=$1", [correo_electronico]);
-  if (!u) {
-    const err = new Error("Credenciales inválidas");
-    err.status = 401;
-    throw err;
-  }
+  return withClient(async (client) => {
+    const passCol = await detectPasswordColumn(client);
+    const u = await client.query(
+      `SELECT correo_electronico, ${passCol} AS pass
+       FROM persona
+       WHERE correo_electronico=$1`,
+      [correo_electronico]
+    );
 
-  const ok = await bcrypt.compare(String(password), String(u.password));
-  if (!ok) {
-    const err = new Error("Credenciales inválidas");
-    err.status = 401;
-    throw err;
-  }
+    if (!u.rows.length) throw new Error("Credenciales inválidas");
+    const ok = await bcrypt.compare(password, u.rows[0].pass);
+    if (!ok) throw new Error("Credenciales inválidas");
 
-  const role = await resolveRole(correo_electronico);
-  const token = signToken(correo_electronico, role);
-  return { ok: true, token, role };
+    return { token: signToken({ correo: correo_electronico, role: "USER" }) };
+  });
 }
 
-async function me(correo) {
-  const persona = await queryOne(
-    `SELECT correo_electronico, nombres, apellidos, fecha_nacimiento, url_foto, biografia, total_puntos
-     FROM persona WHERE correo_electronico=$1`,
-    [correo]
-  );
-  return persona;
-}
-
-module.exports = { register, login, me, resolveRole };
+module.exports = { register, login };

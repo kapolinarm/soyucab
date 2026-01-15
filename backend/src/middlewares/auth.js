@@ -1,36 +1,18 @@
 const jwt = require("jsonwebtoken");
-const { JWT_SECRET } = require("../config/env");
+const env = require("../config/env");
 
-function authRequired(req, res, next) {
-  const hdr = req.headers.authorization || "";
-  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
-  if (!token) return res.status(401).json({ error: "Falta token Bearer" });
+function requireAuth(req, res, next) {
+  const h = req.headers.authorization || "";
+  const [type, token] = h.split(" ");
+  if (type !== "Bearer" || !token) return res.status(401).json({ error: "No autorizado" });
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload; // { sub, role, iat, exp }
+    const payload = jwt.verify(token, env.JWT_SECRET);
+    req.user = payload; 
     return next();
-  } catch (e) {
-    return res.status(401).json({ error: "Token inválido o expirado" });
+  } catch {
+    return res.status(401).json({ error: "Token inválido" });
   }
 }
 
-function requireSelfOrAdmin(paramName = "correo") {
-  return (req, res, next) => {
-    const target = String(req.params[paramName] || "");
-    if (req.user?.sub === target) return next();
-    if (req.user?.role === "ADMIN") return next();
-    return res.status(403).json({ error: "No autorizado" });
-  };
-}
-
-function requireRole(roles = []) {
-  const allowed = roles.map(r => String(r).toUpperCase());
-  return (req, res, next) => {
-    const r = String(req.user?.role || "").toUpperCase();
-    if (allowed.includes(r)) return next();
-    return res.status(403).json({ error: "Rol no autorizado" });
-  };
-}
-
-module.exports = { authRequired, requireSelfOrAdmin, requireRole };
+module.exports = { requireAuth };

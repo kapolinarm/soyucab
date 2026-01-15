@@ -1,54 +1,31 @@
 require("dotenv").config();
 
 const express = require("express");
-const corsMiddleware = require("./config/cors");
-
-const { queryRows } = require("./db/query");
-
-const authRoutes = require("./routes/auth.routes");
-const personasRoutes = require("./routes/personas.routes");
-const privacidadRoutes = require("./routes/privacidad.routes");
-const relacionesRoutes = require("./routes/relaciones.routes");
-const gruposRoutes = require("./routes/grupos.routes");
-const membresiasRoutes = require("./routes/membresias.routes");
-const eventosRoutes = require("./routes/eventos.routes");
-const asistenciasRoutes = require("./routes/asistencias.routes");
-const encuestasRoutes = require("./routes/encuestas.routes");
-const respuestasRoutes = require("./routes/respuestas.routes");
-const reportesRoutes = require("./routes/reportes.routes");
+const env = require("./config/env");
+const { corsMiddleware } = require("./config/cors");
+const { requireAuth } = require("./middlewares/auth");
 
 const app = express();
-
-app.use(corsMiddleware);
+app.use(corsMiddleware());
 app.use(express.json({ limit: "2mb" }));
 
-app.get("/health", async (req, res) => {
-  try {
-    await queryRows("SELECT 1 AS ok");
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
+app.get("/health", (req, res) => res.json({ ok: true }));
+
+app.use("/auth", require("./routes/auth.routes"));
+
+app.use("/personas", requireAuth, require("./routes/personas.routes"));
+app.use("/privacidad", requireAuth, require("./routes/privacidad.routes"));
+app.use("/relaciones", requireAuth, require("./routes/relaciones.routes"));
+app.use("/grupos", requireAuth, require("./routes/grupos.routes"));
+app.use("/membresias", requireAuth, require("./routes/membresias.routes"));
+app.use("/eventos", requireAuth, require("./routes/eventos.routes"));
+app.use("/asistencias", requireAuth, require("./routes/asistencias.routes"));
+app.use("/encuestas", requireAuth, require("./routes/encuestas.routes"));
+app.use("/respuestas", requireAuth, require("./routes/respuestas.routes"));
+app.use("/reportes", requireAuth, require("./routes/reportes.routes"));
+
+app.use((req, res) => res.status(404).json({ error: "Not Found" }));
+
+app.listen(env.PORT, () => {
+  console.log(`soyucab-api listening on :${env.PORT}`);
 });
-
-app.use("/auth", authRoutes);
-app.use("/personas", personasRoutes);
-app.use("/privacidad", privacidadRoutes);
-app.use("/relaciones", relacionesRoutes);
-app.use("/grupos", gruposRoutes);
-app.use("/membresias", membresiasRoutes);
-app.use("/eventos", eventosRoutes);
-app.use("/asistencias", asistenciasRoutes);
-app.use("/encuestas", encuestasRoutes);
-app.use("/respuestas", respuestasRoutes);
-app.use("/reportes", reportesRoutes);
-
-app.use((req, res) => res.status(404).json({ error: "Ruta no encontrada" }));
-
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: "Error interno", detail: String(err.message || err) });
-});
-
-const PORT = Number(process.env.PORT || 3000);
-app.listen(PORT, () => console.log(`Backend escuchando en http://localhost:${PORT}`));

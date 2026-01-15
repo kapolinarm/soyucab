@@ -1,11 +1,8 @@
-const express = require("express");
-const { authRequired } = require("../middlewares/auth");
-const ctrl = require("../controllers/relaciones.controller");
+const router = require("express").Router();
+const c = require("../controllers/relaciones.controller");
 
-const router = express.Router();
-
-router.get("/", authRequired, ctrl.listMine);
-router.post("/", authRequired, ctrl.create);
-router.put("/estado", authRequired, ctrl.changeEstado);
+router.get("/", c.list);
+router.post("/solicitar", c.solicitar);
+router.post("/aceptar", c.aceptar);
 
 module.exports = router;

@@ -1,13 +1,10 @@
-const express = require("express");
-const { authRequired } = require("../middlewares/auth");
-const ctrl = require("../controllers/reportes.controller");
+const router = require("express").Router();
+const c = require("../controllers/reportes.controller");
 
-const router = express.Router();
-
-router.get("/crecimiento", authRequired, ctrl.crecimiento);
-router.get("/interaccion", authRequired, ctrl.interaccion);
-router.get("/grupos", authRequired, ctrl.grupos);
-router.get("/eventos", authRequired, ctrl.eventos);
-router.get("/egresados", authRequired, ctrl.egresados);
+router.get("/crecimiento", c.crecimiento);
+router.get("/interaccion", c.interaccion);
+router.get("/grupos", c.topGrupos);
+router.get("/eventos", c.eventosAsistencia);
+router.get("/egresados", c.egresadosGeo);
 
 module.exports = router;

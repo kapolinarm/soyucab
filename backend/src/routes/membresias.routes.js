@@ -1,11 +1,8 @@
-const express = require("express");
-const { authRequired } = require("../middlewares/auth");
-const ctrl = require("../controllers/membresias.controller");
+const router = require("express").Router();
+const c = require("../controllers/membresias.controller");
 
-const router = express.Router();
-
-router.get("/:grupo", authRequired, ctrl.listByGrupo);
-router.post("/join", authRequired, ctrl.join);
-router.delete("/leave/:grupo", authRequired, ctrl.leave);
+router.get("/grupo/:grupo", c.listByGrupo);
+router.post("/join", c.join);
+router.delete("/leave/:grupo", c.leave);
 
 module.exports = router;

@@ -1,43 +1,25 @@
-const { queryRows, exec } = require("../db/query");
+const { queryOne, exec } = require("../db/query");
 
-async function getByCorreo(req, res) {
-  try {
-    const rows = await queryRows(
-      `SELECT seccion_perfil, es_visible
-       FROM configuracion_de_privacidad
-       WHERE correo_electronico=$1
-       ORDER BY seccion_perfil ASC`,
-      [req.params.correo]
-    );
-    return res.json({ correo: req.params.correo, rows });
-  } catch (e) {
-    return res.status(500).json({ error: String(e.message || e) });
-  }
+async function get(req, res) {
+  const r = await queryOne(
+    `SELECT * FROM configuracion_de_privacidad WHERE correo_electronico=$1`,
+    [req.user.sub]
+  );
+  return res.json(r);
 }
 
-async function upsertMany(req, res) {
-  try {
-    const items = Array.isArray(req.body?.items) ? req.body.items : null;
-    if (!items) return res.status(400).json({ error: "Body debe ser { items: [...] }" });
-
-    for (const it of items) {
-      if (!it?.seccion_perfil || typeof it.es_visible !== "boolean") {
-        return res.status(400).json({ error: "Cada item requiere seccion_perfil y es_visible(boolean)" });
-      }
-
-      await exec(
-        `INSERT INTO configuracion_de_privacidad(seccion_perfil, correo_electronico, es_visible)
-         VALUES ($1,$2,$3)
-         ON CONFLICT (seccion_perfil, correo_electronico)
-         DO UPDATE SET es_visible = EXCLUDED.es_visible`,
-        [String(it.seccion_perfil), req.params.correo, it.es_visible]
-      );
-    }
-
-    return res.json({ ok: true });
-  } catch (e) {
-    return res.status(500).json({ error: String(e.message || e) });
-  }
+async function update(req, res) {
+  const { visibilidad_perfil, mostrar_email, mostrar_telefono, mostrar_foto } = req.body || {};
+  await exec(
+    `UPDATE configuracion_de_privacidad
+     SET visibilidad_perfil = COALESCE($2, visibilidad_perfil),
+         mostrar_email = COALESCE($3, mostrar_email),
+         mostrar_telefono = COALESCE($4, mostrar_telefono),
+         mostrar_foto = COALESCE($5, mostrar_foto)
+     WHERE correo_electronico=$1`,
+    [req.user.sub, visibilidad_perfil, mostrar_email, mostrar_telefono, mostrar_foto]
+  );
+  return res.json({ ok: true });
 }
 
-module.exports = { getByCorreo, upsertMany };
+module.exports = { get, update };

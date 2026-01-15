@@ -16,6 +16,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    restart: unless-stopped
 
   jsreport:
     image: jsreport/jsreport:4.11.0
@@ -31,6 +32,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+    restart: unless-stopped
 
   api:
     build: ./backend
@@ -43,14 +45,21 @@ services:
       DB_NAME: soyucab
       DB_USER: soyucab_admin
       DB_PASSWORD: soyucab_admin_pwd
-      JWT_SECRET: "cambia_esto_por_algo_largo_y_random"
 
+      JWT_SECRET: "cambia_esto_por_algo_largo_y_random"
       JSREPORT_URL: http://jsreport:5488
+      NODE_ENV: production
     depends_on:
       db:
         condition: service_healthy
       jsreport:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
 
 volumes:
   pgdata:

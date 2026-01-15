@@ -23,18 +23,16 @@ async function queryOne(sql, params = []) {
 }
 
 async function exec(sql, params = []) {
-  return withClient(async (client) => {
-    return client.query(sql, params);
-  });
+  return withClient(async (client) => client.query(sql, params));
 }
 
 async function tx(fn) {
   return withClient(async (client) => {
     await client.query("BEGIN");
     try {
-      const result = await fn(client);
+      const out = await fn(client);
       await client.query("COMMIT");
-      return result;
+      return out;
     } catch (e) {
       await client.query("ROLLBACK");
       throw e;
@@ -42,4 +40,4 @@ async function tx(fn) {
   });
 }
 
-module.exports = { queryRows, queryOne, exec, tx };
+module.exports = { queryRows, queryOne, exec, tx, withClient };

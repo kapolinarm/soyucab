@@ -1,26 +1,23 @@
-const axios = require("axios");
-const { JSREPORT_URL } = require("../config/env");
+const { queryRows } = require("../db/query");
 
-async function pingJsreport() {
-  await axios.get(`${JSREPORT_URL}/api/ping`);
+async function crecimiento() {
+  return queryRows(`SELECT * FROM vw_reporte_crecimiento_registros_mes ORDER BY mes DESC, tipo ASC`);
 }
 
-async function renderWithJsreport({ templateContent, data, format, reportName }) {
-  const recipe = (format === "pdf") ? "chrome-pdf" : "html";
-  const engine = "handlebars";
-
-  const body = {
-    template: { content: templateContent, recipe, engine },
-    data,
-    options: { reportName }
-  };
-
-  const resp = await axios.post(`${JSREPORT_URL}/api/report`, body, {
-    responseType: "arraybuffer",
-    headers: { "Content-Type": "application/json" }
-  });
-
-  return resp.data;
+async function interaccion() {
+  return queryRows(`SELECT * FROM vw_reporte_interaccion_usuarios ORDER BY score_interaccion DESC, correo_electronico ASC LIMIT 50`);
 }
 
-module.exports = { pingJsreport, renderWithJsreport };
+async function topGrupos() {
+  return queryRows(`SELECT * FROM vw_reporte_top_grupos_miembros`);
+}
+
+async function eventosAsistencia() {
+  return queryRows(`SELECT * FROM vw_reporte_eventos_asistencia`);
+}
+
+async function egresadosGeo() {
+  return queryRows(`SELECT * FROM vw_reporte_egresados_distribucion_geografica`);
+}
+
+module.exports = { crecimiento, interaccion, topGrupos, eventosAsistencia, egresadosGeo };

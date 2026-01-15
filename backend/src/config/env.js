@@ -1,20 +1,21 @@
-const dotenv = require("dotenv");
-dotenv.config({ path: ".env" });
-
-function must(name, fallback) {
-  const v = process.env[name] ?? fallback;
-  if (v === undefined || v === null || String(v).trim() === "") {
-    throw new Error(`Falta variable de entorno: ${name}`);
-  }
+function required(name) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Falta variable de entorno: ${name}`);
   return v;
 }
 
-module.exports = {
-  DB_HOST: must("DB_HOST"),
-  DB_PORT: Number(process.env.DB_PORT || 5432),
-  DB_NAME: must("DB_NAME"),
-  DB_USER: must("DB_USER"),
-  DB_PASSWORD: must("DB_PASSWORD"),
-  JWT_SECRET: must("JWT_SECRET", "dev_secret_change_me"),
-  JSREPORT_URL: must("JSREPORT_URL", "http://localhost:5488"),
+const env = {
+  NODE_ENV: process.env.NODE_ENV || "production",
+  PORT: parseInt(process.env.PORT || "3000", 10),
+
+  DB_HOST: required("DB_HOST"),
+  DB_PORT: parseInt(required("DB_PORT"), 10),
+  DB_NAME: required("DB_NAME"),
+  DB_USER: required("DB_USER"),
+  DB_PASSWORD: required("DB_PASSWORD"),
+
+  JWT_SECRET: required("JWT_SECRET"),
+  JSREPORT_URL: required("JSREPORT_URL")
 };
+
+module.exports = env;

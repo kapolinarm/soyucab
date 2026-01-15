@@ -1,10 +1,6 @@
-const express = require("express");
-const { authRequired } = require("../middlewares/auth");
-const ctrl = require("../controllers/eventos.controller");
+const router = require("express").Router();
+const c = require("../controllers/eventos.controller");
 
-const router = express.Router();
-
-router.get("/", authRequired, ctrl.list);
-router.post("/", authRequired, ctrl.create);
+router.get("/", c.list);
 
 module.exports = router;
