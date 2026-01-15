@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16
+    container_name: soyucab-db
+    environment:
+      POSTGRES_DB: soyucab
+      POSTGRES_USER: soyucab_admin
+      POSTGRES_PASSWORD: soyucab_admin_pwd
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/docker-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soyucab_admin -d soyucab"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  jsreport:
+    image: jsreport/jsreport:4.11.0
+    container_name: soyucab-jsreport
+    ports:
+      - "5488:5488"
+    environment:
+      - chrome_launchOptions_args=--no-sandbox, --disable-dev-shm-usage, --disable-gpu
+    volumes:
+      - jsreportdata:/jsreport
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5488/api/ping > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build: ./backend
+    container_name: soyucab-api
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: soyucab
+      DB_USER: soyucab_admin
+      DB_PASSWORD: soyucab_admin_pwd
+      JWT_SECRET: "cambia_esto_por_algo_largo_y_random"
+
+      JSREPORT_URL: http://jsreport:5488
+    depends_on:
+      db:
+        condition: service_healthy
+      jsreport:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  jsreportdata:
